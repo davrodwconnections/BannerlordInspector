@@ -1,0 +1,14 @@
+{
+  "name": "bannerlord-inspector-mcp",
+  "version": "1.0.0",
+  "description": "MCP bridge to a running Mount & Blade II: Bannerlord campaign (read-only).",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node server.js --selftest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

@@ -1,0 +1,9 @@
+﻿node_modules/
+bin/
+obj/
+dist/
+.env
+.env.*
+*.log
+Thumbs.db
+desktop.ini

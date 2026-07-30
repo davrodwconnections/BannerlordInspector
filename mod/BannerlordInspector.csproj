@@ -1,0 +1,85 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- =================================================================
+       BannerlordInspector - a read-only window into a running campaign.
+
+       Serves JSON over loopback so an external tool (the MCP bridge in
+       ..\mcp) can ask the live game questions that static analysis
+       cannot answer.
+
+       Source lives here, outside the game. Build output goes to dist\;
+       deployment into Modules\ is opt-in:
+         dotnet build BannerlordInspector.csproj -c Release -p:Deploy=true
+       ================================================================= -->
+
+  <PropertyGroup>
+    <AssemblyName>BannerlordInspector</AssemblyName>
+    <RootNamespace>BannerlordInspector</RootNamespace>
+    <TargetFramework>net48</TargetFramework>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>10.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+
+    <!-- Read only, for reference assemblies. Never written to by a plain build. -->
+    <GameFolder Condition="'$(BANNERLORD_GAME_DIR)' != ''">$(BANNERLORD_GAME_DIR)</GameFolder>
+    <GameFolder Condition="'$(BANNERLORD_GAME_DIR)' == ''">D:\SteamLibrary\steamapps\common\Mount &amp; Blade II Bannerlord</GameFolder>
+
+    <OutputPath>$(MSBuildProjectDirectory)\dist\bin\Win64_Shipping_Client\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="obj\**" />
+    <Compile Remove="dist\**" />
+  </ItemGroup>
+
+  <Target Name="StageModule" AfterTargets="Build">
+    <Copy SourceFiles="SubModule.xml" DestinationFolder="$(MSBuildProjectDirectory)\dist\" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="Staged at $(MSBuildProjectDirectory)\dist\ (not deployed)" />
+  </Target>
+
+  <Target Name="DeployToGame" AfterTargets="StageModule" Condition="'$(Deploy)' == 'true'">
+    <ItemGroup>
+      <StagedFiles Include="$(MSBuildProjectDirectory)\dist\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(StagedFiles)"
+          DestinationFiles="@(StagedFiles->'$(GameFolder)\Modules\BannerlordInspector\%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Message Importance="high" Text="DEPLOYED to $(GameFolder)\Modules\BannerlordInspector\" />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="$(GameFolder)\bin\Win64_Shipping_Client\TaleWorlds.*.dll" Exclude="$(GameFolder)\bin\Win64_Shipping_Client\TaleWorlds.Native.dll">
+      <HintPath>%(Identity)</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(GameFolder)\Modules\Native\bin\Win64_Shipping_Client\*.dll">
+      <HintPath>%(Identity)</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(GameFolder)\Modules\SandBox\bin\Win64_Shipping_Client\*.dll">
+      <HintPath>%(Identity)</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(GameFolder)\Modules\SandBoxCore\bin\Win64_Shipping_Client\*.dll">
+      <HintPath>%(Identity)</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(GameFolder)\Modules\StoryMode\bin\Win64_Shipping_Client\*.dll">
+      <HintPath>%(Identity)</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(GameFolder)\Modules\Bannerlord.Harmony\bin\Win64_Shipping_Client\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(GameFolder)\bin\Win64_Shipping_Client\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
