@@ -32,6 +32,38 @@
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
+  <!-- =================================================================
+       Where HarmonyLib lives depends on the install, and getting this
+       wrong is not a subtle failure - it is CS0246 on every file that
+       mentions Harmony.
+
+         - vanilla-ish install: the Bannerlord.Harmony module owns it
+         - TAOM install: Bannerlord.Harmony is an EMPTY STUB (no bin\ at
+           all) and TAOM.Dependencies ships 0Harmony 2.4.2 instead
+         - this machine also keeps an archived modlist under
+           Modules\TOR MODS\ with its own copy
+
+       Compile against whichever is actually present, in the order the
+       runtime would resolve it, and say so out loud - a build that
+       silently picked a different Harmony than the one that will be
+       loaded is exactly the mismatch this is meant to prevent.
+       ================================================================= -->
+  <PropertyGroup>
+    <_HarmonyStd>$(GameFolder)\Modules\Bannerlord.Harmony\bin\Win64_Shipping_Client\0Harmony.dll</_HarmonyStd>
+    <_HarmonyTaom>$(GameFolder)\Modules\TAOM.Dependencies\bin\Win64_Shipping_Client\0Harmony.dll</_HarmonyTaom>
+    <_HarmonyArchive>$(GameFolder)\Modules\TOR MODS\Bannerlord.Harmony\bin\Win64_Shipping_Client\0Harmony.dll</_HarmonyArchive>
+
+    <HarmonyPath Condition="Exists('$(_HarmonyStd)')">$(_HarmonyStd)</HarmonyPath>
+    <HarmonyPath Condition="'$(HarmonyPath)' == '' AND Exists('$(_HarmonyTaom)')">$(_HarmonyTaom)</HarmonyPath>
+    <HarmonyPath Condition="'$(HarmonyPath)' == '' AND Exists('$(_HarmonyArchive)')">$(_HarmonyArchive)</HarmonyPath>
+  </PropertyGroup>
+
+  <Target Name="ReportHarmonySource" BeforeTargets="ResolveReferences">
+    <Error Condition="'$(HarmonyPath)' == ''"
+           Text="No 0Harmony.dll found under $(GameFolder)\Modules. Looked in Bannerlord.Harmony, TAOM.Dependencies and 'TOR MODS\Bannerlord.Harmony'. Install a module that ships Harmony, or set BANNERLORD_GAME_DIR to an install that has one." />
+    <Message Importance="high" Text="Harmony: $(HarmonyPath)" />
+  </Target>
+
   <ItemGroup>
     <Compile Remove="obj\**" />
     <Compile Remove="dist\**" />
@@ -68,12 +100,17 @@
       <HintPath>%(Identity)</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- Absent in a total-conversion install; a wildcard that matches nothing is not an error. -->
     <Reference Include="$(GameFolder)\Modules\StoryMode\bin\Win64_Shipping_Client\*.dll">
       <HintPath>%(Identity)</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="$(GameFolder)\Modules\CustomBattle\bin\Win64_Shipping_Client\*.dll">
+      <HintPath>%(Identity)</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="0Harmony">
-      <HintPath>$(GameFolder)\Modules\Bannerlord.Harmony\bin\Win64_Shipping_Client\0Harmony.dll</HintPath>
+      <HintPath>$(HarmonyPath)</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Newtonsoft.Json">

@@ -8,19 +8,44 @@
   <SingleplayerModule value="true" />
   <MultiplayerModule value="false" />
   <ModuleCategory value="Singleplayer" />
+  <!--
+    Hard dependencies are only the three modules that exist in EVERY install. Anything else
+    listed here is a module the launcher will force the user to enable, and two of the previous
+    entries could not be satisfied at all in a total-conversion install:
+
+      - StoryMode is absent from a TAOM install, and enabling it would drag the vanilla main
+        quest into a Middle-earth campaign. The inspector never touches its types; it only
+        matches the name as a string when classifying assemblies.
+      - Bannerlord.Harmony ships as an empty stub there (no bin\ at all) - HarmonyLib is loaded
+        by TAOM.Dependencies instead. Requiring the stub proves nothing and blocks the launcher.
+
+    Harmony still has to be loaded by SOMEONE before this module. That is what the optional
+    LoadBeforeThis entries below are for: whichever of the two is present wins, and neither is
+    mandatory, so this module stays loadable in a vanilla install and in a TAOM one.
+  -->
   <DependedModules>
-    <DependedModule Id="Bannerlord.Harmony" />
     <DependedModule Id="Native" />
     <DependedModule Id="SandBoxCore" />
     <DependedModule Id="Sandbox" />
-    <DependedModule Id="StoryMode" />
   </DependedModules>
   <DependedModuleMetadatas>
-    <DependedModuleMetadata id="Bannerlord.Harmony" order="LoadBeforeThis" />
     <DependedModuleMetadata id="Native" order="LoadBeforeThis" />
     <DependedModuleMetadata id="SandBoxCore" order="LoadBeforeThis" />
     <DependedModuleMetadata id="Sandbox" order="LoadBeforeThis" />
-    <DependedModuleMetadata id="StoryMode" order="LoadBeforeThis" />
+    <!-- Whoever provides HarmonyLib. Optional individually, required collectively. -->
+    <DependedModuleMetadata id="Bannerlord.Harmony" order="LoadBeforeThis" optional="true" />
+    <DependedModuleMetadata id="TAOM.Dependencies" order="LoadBeforeThis" optional="true" />
+    <!--
+      Load LAST, after the mods being inspected. The Harmony registry and the model registry are
+      both read at request time, not at load, so this is not strictly required - but /doctor's
+      view of "who registered last wins" is only honest if this module is not itself in the
+      middle of that order.
+    -->
+    <DependedModuleMetadata id="StoryMode" order="LoadBeforeThis" optional="true" />
+    <DependedModuleMetadata id="CustomBattle" order="LoadBeforeThis" optional="true" />
+    <DependedModuleMetadata id="LOTRLOME_Armory" order="LoadBeforeThis" optional="true" />
+    <DependedModuleMetadata id="TAOM_Map" order="LoadBeforeThis" optional="true" />
+    <DependedModuleMetadata id="TAOM" order="LoadBeforeThis" optional="true" />
   </DependedModuleMetadatas>
   <SubModules>
     <SubModule>
