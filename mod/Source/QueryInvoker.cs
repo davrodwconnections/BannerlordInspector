@@ -304,6 +304,78 @@ namespace BannerlordInspector
         }
 
         /// <summary>
+        /// The campaign's own collections, for the types MBObjectManager does not hold.
+        ///
+        /// Heroes, clans and kingdoms are campaign objects rather than managed objects. Looking them
+        /// up through MBObjectManager returns null with no error, which reads as "that id does not
+        /// exist" when the id is perfectly valid.
+        /// </summary>
+        private static object FindCampaignObject(Type type, string stringId)
+        {
+            try
+            {
+                bool Match(TaleWorlds.ObjectSystem.MBObjectBase o) =>
+                    o != null && string.Equals(o.StringId, stringId, StringComparison.OrdinalIgnoreCase);
+
+                if (typeof(TaleWorlds.CampaignSystem.Hero).IsAssignableFrom(type))
+                {
+                    foreach (var hero in TaleWorlds.CampaignSystem.Hero.AllAliveHeroes)
+                    {
+                        if (Match(hero)) return hero;
+                    }
+                    // Dead heroes still answer questions - a mod may well be asked about one.
+                    foreach (var hero in TaleWorlds.CampaignSystem.Hero.DeadOrDisabledHeroes)
+                    {
+                        if (Match(hero)) return hero;
+                    }
+                    return null;
+                }
+
+                if (typeof(TaleWorlds.CampaignSystem.Clan).IsAssignableFrom(type))
+                {
+                    foreach (var clan in TaleWorlds.CampaignSystem.Clan.All)
+                    {
+                        if (Match(clan)) return clan;
+                    }
+                    return null;
+                }
+
+                if (typeof(TaleWorlds.CampaignSystem.Kingdom).IsAssignableFrom(type))
+                {
+                    foreach (var kingdom in TaleWorlds.CampaignSystem.Kingdom.All)
+                    {
+                        if (Match(kingdom)) return kingdom;
+                    }
+                    return null;
+                }
+
+                if (typeof(TaleWorlds.CampaignSystem.Settlements.Settlement).IsAssignableFrom(type))
+                {
+                    foreach (var settlement in TaleWorlds.CampaignSystem.Settlements.Settlement.All)
+                    {
+                        if (Match(settlement)) return settlement;
+                    }
+                    return null;
+                }
+
+                if (typeof(TaleWorlds.CampaignSystem.Party.MobileParty).IsAssignableFrom(type))
+                {
+                    foreach (var party in TaleWorlds.CampaignSystem.Party.MobileParty.All)
+                    {
+                        if (Match(party)) return party;
+                    }
+                    return null;
+                }
+            }
+            catch
+            {
+                // No campaign, or a collection not ready yet - fall back to MBObjectManager.
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Looks a game object up by StringId, which is the only stable handle a caller has over
         /// HTTP.
         ///
@@ -314,6 +386,14 @@ namespace BannerlordInspector
         /// </summary>
         private static object FindObject(Type type, string stringId)
         {
+            // Campaign objects first. Hero, Clan and Kingdom are NOT registered with
+            // MBObjectManager - they live in the campaign's own collections - so the generic
+            // GetObject route below silently returns null for them. That is what made
+            // GetHeroReligion('main_hero') fail with "no Hero with StringId 'main_hero'" while
+            // Hero.MainHero.StringId plainly read back as "main_hero".
+            object campaignObject = FindCampaignObject(type, stringId);
+            if (campaignObject != null) return campaignObject;
+
             try
             {
                 MethodInfo generic = typeof(MBObjectManager)

@@ -23,6 +23,7 @@ namespace BannerlordInspector
         private sealed class WorkItem
         {
             public Func<object> Work;
+            public string Label;
             public object Result;
             public Exception Error;
             public readonly ManualResetEventSlim Done = new ManualResetEventSlim(false);
@@ -44,19 +45,32 @@ namespace BannerlordInspector
         /// Called from a request thread. Blocks until the main thread has run <paramref name="work"/>.
         /// Throws on timeout or if the work threw.
         /// </summary>
-        public static object Run(Func<object> work, int timeoutMs)
+        public static object Run(Func<object> work, int timeoutMs, string label = null)
         {
             if (work == null) throw new ArgumentNullException(nameof(work));
 
-            var item = new WorkItem { Work = work };
+            var item = new WorkItem { Work = work, Label = label };
             Queue.Enqueue(item);
 
             if (!item.Done.Wait(timeoutMs))
             {
                 Interlocked.Increment(ref _timedOut);
+
+                // The timeout message is where a hang is first noticed, so say what is known about
+                // it here rather than making the user go and ask a second question.
+                long since = Heartbeat.MillisecondsSinceLastTick;
+                string diagnosis = Heartbeat.LooksHung
+                    ? $"The game has not ticked for {since} ms - it appears HUNG, not merely busy. "
+                      + $"Last thing it was doing: '{Heartbeat.LastPhase}' ({Heartbeat.LastContext}). "
+                      + "Ask /hang or /threads - those answer without waiting for the game."
+                    : Heartbeat.State == "loading" || Heartbeat.State == "starting"
+                        ? $"The game is on a loading screen ({since} ms without a tick, no campaign "
+                          + "up). That is normal on a heavy modlist - ask again once you are on the map."
+                        : "The game is still ticking, so this request was probably just queued behind "
+                          + "slower work.";
+
                 throw new TimeoutException(
-                    $"The game did not tick within {timeoutMs} ms. It may be loading, paused at a "
-                    + "blocking dialog, or minimised.");
+                    $"The game did not run this within {timeoutMs} ms. " + diagnosis);
             }
 
             if (item.Error != null)
@@ -78,6 +92,11 @@ namespace BannerlordInspector
 
             while (processed++ < MaxItemsPerTick && Queue.TryDequeue(out WorkItem item))
             {
+                // Leave a breadcrumb BEFORE running. If the work never returns because the game
+                // hangs inside it, this is the last thing the trail will show - which is precisely
+                // how a hang gets attributed to something.
+                Heartbeat.Mark("request: " + (item.Label ?? "unlabelled"));
+
                 try
                 {
                     item.Result = item.Work();
@@ -91,6 +110,8 @@ namespace BannerlordInspector
                     // Must always fire, or the requesting thread blocks until its timeout.
                     item.Done.Set();
                 }
+
+                Heartbeat.Mark("done: " + (item.Label ?? "unlabelled"));
             }
         }
 
