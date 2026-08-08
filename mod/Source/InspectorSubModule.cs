@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using HarmonyLib;
 using TaleWorlds.Library;
 using TaleWorlds.MountAndBlade;
 
@@ -22,7 +23,10 @@ namespace BannerlordInspector
     /// </summary>
     public class InspectorSubModule : MBSubModuleBase
     {
+        private const string HarmonyId = "oai.bannerlord.inspector";
+
         private HttpServer _server;
+        private Harmony _harmony;
         private bool _started;
 
         protected override void OnSubModuleLoad()
@@ -43,6 +47,24 @@ namespace BannerlordInspector
                 _server = new HttpServer(InspectorConfig.Port, Router.Handle);
                 _server.Start();
                 _started = true;
+
+                // Armed BEFORE anything else runs, and deliberately not behind a "start recording"
+                // command. The exceptions worth catching are the ones thrown during load and during
+                // the first minute of a campaign, and a recorder you have to remember to switch on
+                // is switched off exactly when the interesting failure happens.
+                if (InspectorConfig.CollectErrors)
+                {
+                    ErrorCollector.Arm();
+                }
+
+                // Phase timing is attached HERE, at load, before any campaign exists - never later.
+                // Patching a live method mid-session re-JITs it underneath whatever is calling it,
+                // and a diagnostic is not worth that risk.
+                if (InspectorConfig.MeasureCampaignPhases)
+                {
+                    _harmony = new Harmony(HarmonyId);
+                    CampaignPhasePatches.Apply(_harmony);
+                }
             }
             catch (Exception ex)
             {
@@ -61,11 +83,27 @@ namespace BannerlordInspector
 
             if (!_started) return;
 
+            // The heartbeat goes FIRST and unconditionally. It is what proves the main thread is
+            // alive, so it must not sit behind anything that could throw or block - otherwise a
+            // hang would look identical to the inspector simply having stopped.
+            Heartbeat.Beat();
+
+            // Frame timing rides with the heartbeat: same call site, same thread, and it is the
+            // only place that sees every frame. A single reading of "time since last tick" turned
+            // out to be worthless as an FPS measure - 5 ms and 17 ms seconds apart - so this keeps
+            // the whole distribution instead.
+            PerformanceMonitor.RecordFrame();
+
             MainThreadDispatcher.Pump();
 
             // Watches sample here too - same thread, same safety, and it costs nothing when no
             // watch is registered.
             Watcher.Tick(dt);
+
+            // The world census walks a bounded slice per frame. It used to run whole inside a
+            // request and produced the worst frames in the session - 728 ms - which corrupted its
+            // own measurements. Spread out, it disappears into the frame budget.
+            WorldCensus.Tick();
         }
 
         protected override void OnSubModuleUnloaded()
@@ -74,9 +112,17 @@ namespace BannerlordInspector
 
             try
             {
+                ErrorCollector.Disarm();
+
                 _server?.Dispose();
                 _server = null;
                 _started = false;
+
+                if (_harmony != null)
+                {
+                    _harmony.UnpatchAll(HarmonyId);
+                    _harmony = null;
+                }
             }
             catch (Exception ex)
             {
@@ -97,6 +143,20 @@ namespace BannerlordInspector
         /// See QueryInvoker for exactly what is and is not permitted.
         /// </summary>
         public static bool AllowQueryMethods = true;
+
+        /// <summary>
+        /// Time the campaign's tick dispatchers, so /perf can say which phase eats the frame.
+        /// Costs a Stopwatch timestamp pair per dispatched tick. On by default because a profiler
+        /// you have to remember to switch on is off exactly when you need it.
+        /// </summary>
+        public static bool MeasureCampaignPhases = true;
+
+        /// <summary>
+        /// Record every exception the process throws, grouped, so /errors can answer "did anything
+        /// go wrong when I did that". Costs a dictionary lookup per throw and formats a stack once
+        /// per distinct exception. See <see cref="ErrorCollector"/> for the ceilings.
+        /// </summary>
+        public static bool CollectErrors = true;
 
         public static void Reload()
         {
@@ -119,6 +179,16 @@ namespace BannerlordInspector
                         "# Names containing a mutating verb (Create, Set, Apply, Ensure...) are always",
                         "# refused, as are complex arguments. Set false to forbid all method calls.",
                         "allowQueryMethods=true",
+                        "",
+                        "# Time the campaign's tick dispatchers so /perf can say which phase eats the",
+                        "# frame. Costs a timestamp pair per dispatched tick. Patched at load only,",
+                        "# never while the game is running.",
+                        "measureCampaignPhases=true",
+                        "",
+                        "# Record exceptions as they are thrown - including the ones a mod catches",
+                        "# and swallows, which are invisible in the game's own log. Grouped by kind,",
+                        "# capped, and read through /errors. Set false to record nothing.",
+                        "collectErrors=true",
                         ""
                     }));
                     InspectorLog.Info("config.txt created with defaults.");
@@ -139,6 +209,8 @@ namespace BannerlordInspector
                     if (key == "enabled" && bool.TryParse(value, out bool enabled)) Enabled = enabled;
                     if (key == "port" && int.TryParse(value, out int port)) Port = port;
                     if (key == "allowQueryMethods" && bool.TryParse(value, out bool allow)) AllowQueryMethods = allow;
+                    if (key == "measureCampaignPhases" && bool.TryParse(value, out bool measure)) MeasureCampaignPhases = measure;
+                    if (key == "collectErrors" && bool.TryParse(value, out bool collect)) CollectErrors = collect;
                 }
             }
             catch (Exception ex)

@@ -20,6 +20,11 @@ namespace BannerlordInspector
 
         public static object Handle(string path, IDictionary<string, string> query)
         {
+            // Remember the route so the breadcrumb the main thread leaves names the actual query,
+            // not just "a request". When a hang is attributed to a breadcrumb, this is the detail
+            // that makes it actionable.
+            _currentRoute = path;
+
             switch (path.TrimEnd('/').ToLowerInvariant())
             {
                 case "":
@@ -29,6 +34,65 @@ namespace BannerlordInspector
                 case "/routes":
                     return Routes();
 
+                // --- these three deliberately DO NOT wait for the game -------------
+                // They are the ones that still answer when the main thread is hung, which is
+                // exactly when every other route times out and goes silent.
+                case "/hang":
+                    return Hang();
+
+                case "/threads":
+                    return ThreadInspector.Snapshot();
+
+                // Frame timings are recorded on the main thread but READ from plain arrays, so this
+                // answers even while the game is stuttering badly - which is when it is asked.
+                case "/perf":
+                    if (query.ContainsKey("reset"))
+                    {
+                        PerformanceMonitor.Reset();
+                        return new { reset = true, note = "Counters cleared. Play for a while, then ask again." };
+                    }
+                    return PerformanceMonitor.Report();
+
+                // Off-thread on purpose. Exceptions are recorded from whatever thread threw them
+                // into a plain dictionary, so this answers even when the game is hung or dying -
+                // which is precisely the moment you want to know what was thrown.
+                case "/errors":
+                {
+                    string action = Str(query, "action");
+
+                    if (string.Equals(action, "clear", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ErrorCollector.Clear();
+                        return new { cleared = true, note = "Now go and do the thing in game, then read /errors again." };
+                    }
+
+                    if (string.Equals(action, "arm", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ErrorCollector.Arm();
+                        return new { armed = true };
+                    }
+
+                    if (string.Equals(action, "disarm", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ErrorCollector.Disarm();
+                        return new { armed = false };
+                    }
+
+                    return ErrorCollector.Report(
+                        Str(query, "blame"), Str(query, "q"),
+                        Since(query), Limit(query, 25), Flag(query, "full"));
+                }
+
+                case "/breadcrumbs":
+                    return new
+                    {
+                        note = "What the main thread was doing, newest first. If the game is hung, "
+                               + "the newest entry is where it stopped.",
+                        lastPhase = Heartbeat.LastPhase,
+                        lastContext = Heartbeat.LastContext,
+                        trail = Heartbeat.Breadcrumbs()
+                    };
+
                 case "/status":
                     return OnMainThread(Status);
 
@@ -37,6 +101,21 @@ namespace BannerlordInspector
 
                 case "/models":
                     return OnMainThread(Models);
+
+                case "/ticksubscribers":
+                    return OnMainThread(() => TickSubscribers.Report(Str(query, "event")), 15000);
+
+                // These read a snapshot the census already built, so they neither iterate nor wait
+                // for the tick. That is deliberate: walking 11,000 objects inside a request was
+                // producing 700 ms freezes and poisoning the performance numbers.
+                case "/scale":
+                    return WorldCensus.Scale();
+
+                case "/parties":
+                    return WorldCensus.Parties();
+
+                case "/settlementbreakdown":
+                    return WorldCensus.Settlements();
 
                 case "/mods":
                     return OnMainThread(Mods);
@@ -100,6 +179,49 @@ namespace BannerlordInspector
                 case "/objects/types":
                     return ObjectBrowser.Known();
 
+                // --- auditing the content a modlist produced -----------------
+                // Both sweep every registered object, so they get the long budget: they are asked
+                // rarely and deliberately, unlike the state routes.
+                case "/equipment":
+                    return OnMainThread(() => ContentAudit.Equipment(
+                        Str(query, "culture"), Str(query, "id"),
+                        Flag(query, "heroesonly"), Flag(query, "all"), Limit(query, 25)), 25000);
+
+                case "/world":
+                    return OnMainThread(ContentAudit.World, 25000);
+
+                case "/groupby":
+                    return OnMainThread(() => GroupBy.Run(
+                        Str(query, "over"), Str(query, "by"), Str(query, "stat"), Limit(query, 40)), 25000);
+
+                // --- other mods' logs ---------------------------------------
+                // Files, not game state: no dispatcher, and it answers while the game is hung.
+                case "/modlog":
+                    return string.IsNullOrWhiteSpace(Str(query, "file"))
+                        ? ModLogReader.List(Str(query, "mod"))
+                        : ModLogReader.Read(Str(query, "file"), Limit(query, 80), Str(query, "q"));
+
+                // --- before and after ---------------------------------------
+                case "/snapshot":
+                {
+                    string action = (Str(query, "action") ?? "list").ToLowerInvariant();
+                    string name = Str(query, "name");
+
+                    switch (action)
+                    {
+                        case "save":
+                            return OnMainThread(() => Snapshot.Save(name), 25000);
+                        case "compare":
+                        case "diff":
+                            return OnMainThread(() => Snapshot.Compare(name), 25000);
+                        case "drop":
+                        case "delete":
+                            return Snapshot.Drop(name);
+                        default:
+                            return Snapshot.List();
+                    }
+                }
+
                 // --- watching values change ---------------------------------
                 case "/watch":
                     return Watcher.Report(Str(query, "path"));
@@ -118,8 +240,15 @@ namespace BannerlordInspector
             }
         }
 
+        /// <summary>
+        /// The route being served on this thread, used to label the breadcrumb the main thread
+        /// leaves before running the work. Thread-static because each request has its own thread,
+        /// which makes this cheaper and safer than threading a label through twenty call sites.
+        /// </summary>
+        [ThreadStatic] private static string _currentRoute;
+
         private static object OnMainThread(Func<object> work) =>
-            MainThreadDispatcher.Run(work, DefaultTimeoutMs);
+            MainThreadDispatcher.Run(work, DefaultTimeoutMs, _currentRoute);
 
         /// <summary>
         /// Sweeps that walk every loaded assembly (doctor, patch inventory, type search) legitimately
@@ -127,7 +256,7 @@ namespace BannerlordInspector
         /// default timeout and looking like a hung game.
         /// </summary>
         private static object OnMainThread(Func<object> work, int timeoutMs) =>
-            MainThreadDispatcher.Run(work, timeoutMs);
+            MainThreadDispatcher.Run(work, timeoutMs, _currentRoute);
 
         private static string Str(IDictionary<string, string> query, string key) =>
             query.TryGetValue(key, out string value) ? value : null;
@@ -137,6 +266,19 @@ namespace BannerlordInspector
             if (!query.TryGetValue(key, out string raw)) return false;
             if (string.IsNullOrEmpty(raw)) return true;      // bare ?values counts as true
             return !string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase) && raw != "0";
+        }
+
+        /// <summary>
+        /// "Only what happened in the last N seconds" - the filter that turns a pile of exceptions
+        /// into an answer about the thing you just did. 0 means no time filter.
+        /// </summary>
+        private static int Since(IDictionary<string, string> query)
+        {
+            if (query.TryGetValue("since", out string raw) && int.TryParse(raw, out int parsed) && parsed > 0)
+            {
+                return parsed;
+            }
+            return 0;
         }
 
         private static double Seconds(IDictionary<string, string> query, double fallback)
@@ -159,8 +301,77 @@ namespace BannerlordInspector
             readOnly = true,
             served = MainThreadDispatcher.Served,
             pending = MainThreadDispatcher.Pending,
-            timedOut = MainThreadDispatcher.TimedOut
+            timedOut = MainThreadDispatcher.TimedOut,
+
+            // The heartbeat: read without touching the game, so this stays truthful during a hang.
+            gameTicking = !Heartbeat.LooksHung,
+            msSinceLastTick = Heartbeat.MillisecondsSinceLastTick,
+            ticks = Heartbeat.TickCount,
+
+            // Surfaced here so a caller who only ever checks health still finds out that something
+            // is throwing. The detail is at /errors.
+            errors = ErrorCollector.Summary()
         };
+
+        /// <summary>
+        /// The one-call answer for "it froze". Combines the heartbeat, what the main thread was last
+        /// doing, and whether the process is deadlocked or spinning - none of which needs the game
+        /// to cooperate.
+        /// </summary>
+        private static object Hang()
+        {
+            long since = Heartbeat.MillisecondsSinceLastTick;
+
+            string state = Heartbeat.State;
+
+            // Loading blocks the tick for a long time on a heavy modlist, and calling that a freeze
+            // makes the whole tool untrustworthy on the day something really does hang. Say which
+            // of the two it is instead of reporting silence as failure.
+            if (state == "loading" || state == "starting")
+            {
+                return new
+                {
+                    hung = false,
+                    state,
+                    msSinceLastTick = since,
+                    ticks = Heartbeat.TickCount,
+                    context = Heartbeat.LastContext,
+                    note = "No campaign is up and the tick is blocked - this is a loading screen, not "
+                           + "a freeze. A worker thread burning CPU here is exactly what loading looks "
+                           + "like. Ask again once you are on the map."
+                };
+            }
+
+            if (state == "healthy")
+            {
+                return new
+                {
+                    hung = false,
+                    state,
+                    msSinceLastTick = since,
+                    ticks = Heartbeat.TickCount,
+                    context = Heartbeat.LastContext,
+                    note = "The game is ticking. If it FELT frozen, it was a long single operation "
+                           + "rather than a hang - check /breadcrumbs for what took the time."
+                };
+            }
+
+            return new
+            {
+                hung = true,
+                state,
+                msSinceLastTick = since,
+                ticks = Heartbeat.TickCount,
+                lastPhase = Heartbeat.LastPhase,
+                lastContext = Heartbeat.LastContext,
+                threads = ThreadInspector.Snapshot(),
+                trail = Heartbeat.Breadcrumbs(),
+                whatThisMeans =
+                    "The main thread stopped after the newest breadcrumb below. Read 'interpretation' "
+                    + "under threads to tell a deadlock (nothing running, waiting on a lock) from an "
+                    + "infinite loop (a thread burning CPU)."
+            };
+        }
 
         private static object Routes() => new
         {
@@ -174,6 +385,9 @@ namespace BannerlordInspector
                 new { path = "/heroes?name=&limit=", what = "search living heroes by name" },
                 new { path = "/settlements?name=&limit=", what = "search settlements" },
                 new { path = "/eval?path=", what = "read any live value, e.g. Campaign.Current.Models.DiplomacyModel.$type" },
+
+                new { path = "/errors?since=&blame=&q=&full=", what = "ERRORS: exceptions thrown while playing, grouped and blamed on an assembly - including ones a mod swallowed" },
+                new { path = "/errors?action=clear", what = "forget recorded errors, so the next read is caused by what you do next" },
 
                 new { path = "/doctor", what = "SWEEP: shadowed models, prefix conflicts, inert mods - ranked" },
                 new { path = "/conflicts", what = "methods patched by more than one mod, riskiest first" },
@@ -189,6 +403,14 @@ namespace BannerlordInspector
                 new { path = "/mcm?filter=&values=true", what = "other mods' MCM settings with current values" },
                 new { path = "/objects?type=troop&q=&count=", what = "what mods ADDED: troops, items, cultures in the registry" },
                 new { path = "/objects/types", what = "the type aliases /objects understands" },
+
+                new { path = "/equipment?culture=&id=&heroesOnly=", what = "CONTENT: characters with missing armour or weapons - the 'underwear character' sweep" },
+                new { path = "/world", what = "CONTENT: data-shape problems that make the engine throw - landless cultures, leaderless clans, ownerless fiefs" },
+                new { path = "/groupby?over=heroes&by=Race&stat=Age", what = "group any collection by any property, with min/max/avg of a numeric one" },
+                new { path = "/modlog?mod=", what = "list log files other mods write" },
+                new { path = "/modlog?file=&tail=&q=", what = "read the tail of one mod's log, filtered" },
+                new { path = "/snapshot?action=save&name=", what = "BEFORE/AFTER: photograph the world (survives a restart)" },
+                new { path = "/snapshot?action=compare&name=", what = "what moved since that snapshot - owners, wars, deaths" },
 
                 new { path = "/watch", what = "read sampled history" },
                 new { path = "/watch/add?path=&seconds=2", what = "WATCH: sample a value over time to see change" },

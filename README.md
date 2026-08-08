@@ -16,7 +16,7 @@ It has already earned itself once: it proved that the diplomacy model in this in
 | | Where | What |
 |---|---|---|
 | Game module | `mod/` | Serves JSON on `127.0.0.1:8420` from inside the game |
-| MCP bridge | `mcp/` | Exposes that to Claude as 16 tools |
+| MCP bridge | `mcp/` | Exposes that to Claude as 32 tools |
 
 ## Read-only, and how far that goes
 
@@ -48,6 +48,109 @@ per frame so a burst cannot stall a frame.
 | `bannerlord_player` | hero, clan, kingdom, gold, party, position, **captivity state** |
 | `bannerlord_heroes` | search living heroes |
 | `bannerlord_settlements` | search settlements |
+
+### Catching what went wrong
+
+**`bannerlord_errors`** — the tool for working on a mod rather than merely looking at one.
+
+Every other tool here photographs state. This one records exceptions **at the moment they are
+thrown**, which is a strictly larger set than anything a log can show you: a mod that wraps a
+campaign tick in `try/catch` and swallows the exception produces no crash, no log line, and a bug
+report that reads "the feature does nothing". Those show up here.
+
+The loop it exists for:
+
+```
+action=clear          forget everything
+                      → load the save / start the battle / recruit the troop
+(read)                → whatever comes back was caused by what you just did
+```
+
+Identical exceptions collapse into one group with a count, and each group is blamed on the first
+non-engine assembly on its stack — so the answer is "TAOM threw this once, just now", not "an
+exception happened". Filters: `since=60` for the last minute only, `blame=TAOM` for one mod,
+`full=true` for the whole trace.
+
+The cost is bounded by construction, because this handler runs inside the throw path on whatever
+thread threw: a stack is formatted **once per distinct exception** and never again, there is a
+ceiling of 200 examined per second past which occurrences are only counted, and the group table is
+capped at 200 with oldest-evicted. It observes and never handles, so the game behaves exactly as it
+would without the module.
+
+Not every exception is a bug — the engine throws during normal operation. Read `blame` and `count`
+first.
+
+### Auditing the content a modlist produced
+
+The routes above inspect *code*. These inspect what the code and the XML actually produced, which is
+where a total conversion goes wrong: its failures are not exceptions, they are **absences**. The XML
+on disk is not what runs — a malformed entry is dropped silently at load — so the registry is the
+only truth, and it is trivially readable from here.
+
+| Tool | Answers |
+|---|---|
+| `bannerlord_equipment` | characters with missing armour or weapons — the "underwear character" sweep |
+| `bannerlord_world` | data-shape problems that make the **engine** throw: landless cultures, cultures with no basic troop, leaderless clans, ownerless fiefs |
+| `bannerlord_groupby` | group any collection by any property, with min/max/average of a numeric one |
+
+**`bannerlord_world`**'s headline finding is a culture that owns no settlement. Vanilla's lord-spawn
+path takes the first settlement of a culture without checking there is one, so a landless culture
+crashes the game on a daily tick — hours into a campaign, with nothing in the stack pointing at the
+cause. Free to detect, miserable to diagnose.
+
+**`bannerlord_groupby`** is the generic answer to a very specific family of questions. A conversion
+adds races, and its test plan then says "elves should be effectively immortal, dwarves die around
+250". Verifying that by hand means fast-forwarding for hours:
+
+```
+over=heroes by=Race stat=Age
+  -> Race=Elf    n=214  Age min 30  max 9412  avg 1180
+     Race=Dwarf  n=96   Age min 24  max  247  avg  138
+```
+
+Nothing in it knows what a race is — it reads whatever property you name, which is why it works on a
+mod this tool has never heard of. Name a property that does not exist and it lists the ones that do,
+which is usually the fastest way to find what a mod called its field.
+
+### Reading other mods' logs
+
+**`bannerlord_modlog`** — list the log files under `Modules`, then read the tail of one.
+
+Worth pairing with `bannerlord_errors`: that says what was thrown, this says what the mod believed it
+was doing at the time. Separately, two puzzles. Confined to the `Modules` folder — every path is
+resolved and rejected if it escapes that root, because "loopback-only" is a reason not to worry about
+strangers, not a reason to let a GET read the whole disk.
+
+### Before and after
+
+**`bannerlord_snapshot`** — photograph the campaign, then ask what moved.
+
+```
+action=save name=before     → quit, apply the fix, relaunch
+action=compare name=before  → settlements that changed hands, wars declared, heroes who died
+```
+
+This answers what no other route can: *what changed besides the thing I was trying to change*. A fix
+that works and quietly kills three lords is not a fix, and nothing about playing for ten minutes
+makes that visible — the world is too big to hold in your head between two sessions. Snapshots go to
+disk, because the workflow that matters spans a restart.
+
+### Running a whole test plan
+
+**`bannerlord_checklist`** — a tester checklist as data, with pass/fail per line.
+
+```
+mcp/checks/install.json    is this install even sane
+mcp/checks/taom.json       assertions from TAOM's own tester checklist
+```
+
+A check is: call a route, walk a dotted path into the JSON, apply an operator (`eq`, `gt`,
+`contains`, `notEmpty`, …). Adding one is a line of JSON and needs no code. Deliberately not a
+scripting language — the moment checks can compute, they can be wrong in ways that need debugging,
+and a harness nobody trusts is worse than none.
+
+A route that cannot be reached reports **could not run**, never `FAIL`. A closed game must not look
+like a broken mod.
 
 ### Diagnosing the modlist
 
@@ -152,7 +255,23 @@ why a frame got slower.
 dotnet build mod\BannerlordInspector.csproj -c Release -p:Deploy=true
 ```
 
-Enable **Bannerlord Inspector (read-only)** in the launcher.
+Enable **Bannerlord Inspector (read-only)** in the launcher, and put it **last** in the load order —
+after the mods you intend to inspect.
+
+### Total-conversion installs (TAOM and friends)
+
+A conversion install is not a vanilla install with mods on top; two of the things this module used to
+take for granted are simply absent, and both were hard failures rather than degraded behaviour:
+
+| Assumption | Reality in a TAOM install | What was done |
+|---|---|---|
+| `StoryMode` is present | Not installed at all, and enabling it would drag the vanilla main quest into a Middle-earth campaign | Dropped as a hard dependency. It was never used for types — only matched as a string when classifying assemblies |
+| `Bannerlord.Harmony` ships `0Harmony.dll` | It is an **empty stub** — no `bin\` at all. HarmonyLib comes from `TAOM.Dependencies` | The build probes `Bannerlord.Harmony`, then `TAOM.Dependencies`, then an archived modlist, and prints which one it picked |
+
+The remaining hard dependencies are `Native`, `SandBoxCore` and `Sandbox` — the three that exist in
+every install. Harmony is required collectively but not individually: whichever module provides it is
+declared optional and load-before, so the same build loads in a vanilla install and in a converted
+one.
 
 **2. Install the bridge's dependency:**
 
@@ -188,7 +307,9 @@ Port `8420`; override with `BANNERLORD_INSPECTOR_PORT` (and `config.txt` on the 
 node mcp\smoketest.js
 ```
 
-Handshake plus tool list; exits 0 when all 16 are exposed. Separates "the bridge is broken" from
+Handshake plus tool list. It checks that the core tools are present, that no two share a name and
+that every schema is well formed - deliberately not an exact count, which is a number somebody has to
+remember to edit and therefore a test that fails silently. Separates "the bridge is broken" from
 "the game is not running".
 
 ## Configuration
@@ -200,6 +321,8 @@ Handshake plus tool list; exits 0 when all 16 are exposed. Separates "the bridge
 | `enabled` | `true` | run the server at all |
 | `port` | `8420` | loopback port |
 | `allowQueryMethods` | `true` | permit `/call`; `false` makes read-only absolute |
+| `measureCampaignPhases` | `true` | time the campaign tick dispatchers so `/perf` can name the phase eating the frame |
+| `collectErrors` | `true` | record thrown exceptions for `/errors`. On by default because a recorder you have to remember to switch on is off exactly when the interesting failure happens |
 
 ## Limits worth knowing
 

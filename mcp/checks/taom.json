@@ -1,0 +1,81 @@
+{
+  "description": "TAOM (Tales From the Age of Men). Lines from the project's own tester checklist that are assertions about state rather than about how something looks. Run install.json first - if the campaign is not loaded, everything here is vacuous.",
+  "checks": [
+    {
+      "what": "TAOM is actually loaded",
+      "route": "/mods",
+      "path": "modules",
+      "op": "contains",
+      "value": "\"id\":\"TAOM\"",
+      "why": "A module present on disk but not enabled in the launcher produces exactly the symptoms of a broken mod."
+    },
+    {
+      "what": "TAOM.Dependencies is loaded too",
+      "route": "/mods",
+      "path": "modules",
+      "op": "contains",
+      "value": "TAOM.Dependencies",
+      "why": "TAOM resolves HarmonyLib and UIExtenderEx through it. A missing or stale copy fails at the member level, the preview patches never apply, and every character renders in bind pose (issue #371)."
+    },
+    {
+      "what": "Nobody renders in underwear",
+      "route": "/equipment",
+      "params": { "limit": 10 },
+      "path": "counts.naked",
+      "op": "eq",
+      "value": 0,
+      "why": "The first line of the tester checklist, and the most visible content bug there is."
+    },
+    {
+      "what": "Every character resolved an equipment roster",
+      "route": "/equipment",
+      "params": { "limit": 10 },
+      "path": "counts.noRoster",
+      "op": "eq",
+      "value": 0,
+      "why": "No roster resolved usually means a roster id that nothing in the modlist defines - a typo in an XSLT or a file that never registered."
+    },
+    {
+      "what": "No troop is unarmed",
+      "route": "/equipment",
+      "params": { "limit": 10 },
+      "path": "counts.unarmed",
+      "op": "eq",
+      "value": 0,
+      "why": "A troop with no weapon in any slot stands still in battle."
+    },
+    {
+      "what": "No culture is landless",
+      "route": "/world",
+      "path": "findings",
+      "op": "notContains",
+      "value": "culture owns no settlement",
+      "why": "TAOM_Map's settlements.xslt strips all vanilla settlements, so a culture that gets none is reachable. Vanilla SpawnLordParty then throws on the daily clan tick - a crash to desktop with no TAOM frame in the stack."
+    },
+    {
+      "what": "Every culture has a basic troop",
+      "route": "/world",
+      "path": "findings",
+      "op": "notContains",
+      "value": "culture has no basic troop",
+      "why": "Recruitment resolves the culture's basic troop; without one, villages of that culture offer nothing."
+    },
+    {
+      "what": "TAOM has thrown nothing",
+      "route": "/errors",
+      "params": { "blame": "TAOM" },
+      "path": "matched",
+      "op": "eq",
+      "value": 0,
+      "why": "Includes exceptions TAOM caught and swallowed, which never reach any log. Clear the collector before reproducing, or this counts throws from earlier in the session."
+    },
+    {
+      "what": "The Armory dependency is loaded",
+      "route": "/mods",
+      "path": "modules",
+      "op": "contains",
+      "value": "LOTRLOME_Armory",
+      "why": "The dependency is LOTRLOME_Armory, not Armory_2. Item definitions live there; without it, equipment ids resolve to nothing and characters strip."
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "description": "Sanity of the install itself. Nothing here is mod-specific: it is the set of things that must hold before any other checklist's result means anything.",
+  "checks": [
+    {
+      "what": "A campaign is loaded",
+      "route": "/status",
+      "path": "campaignLoaded",
+      "op": "eq",
+      "value": true,
+      "why": "Every content check reads live world state. On the main menu they are all vacuous."
+    },
+    {
+      "what": "The main party exists",
+      "route": "/status",
+      "path": "isMainPartyActive",
+      "op": "eq",
+      "value": true,
+      "why": "No main party usually means the save loaded into a broken state."
+    },
+    {
+      "what": "The game is ticking, not hung",
+      "route": "/hang",
+      "path": "hung",
+      "op": "eq",
+      "value": false,
+      "why": "A frozen main thread makes every other answer stale."
+    },
+    {
+      "what": "Nothing has thrown an unhandled exception",
+      "route": "/errors",
+      "path": "fatal",
+      "op": "eq",
+      "value": 0,
+      "why": "An unhandled exception means the process was on its way down."
+    },
+    {
+      "what": "No structural data problems in the world",
+      "route": "/world",
+      "path": "findingCount",
+      "op": "eq",
+      "value": 0,
+      "why": "Landless cultures and leaderless clans crash the engine days later, far from the cause."
+    }
+  ]
+}

@@ -43,8 +43,37 @@ child.stdout.on("data", (chunk) => {
       console.log(`tools exposed: ${toolCount}`);
       for (const t of tools) console.log("  -", t.name);
       child.kill();
-      // Bumped as tools were added; a drop means a route or schema failed to register.
-      process.exit(toolCount === 17 ? 0 : 1);
+
+      // This used to assert an exact count, which had to be edited by hand every time a tool was
+      // added - and of course was not, so the test failed silently for every new tool while still
+      // printing a list that looked perfectly healthy. A test whose failure is invisible is worse
+      // than no test.
+      //
+      // So: check the things that actually indicate breakage. A tool missing from the core set
+      // means a route or schema failed to register; a duplicate name means two tools were defined
+      // with the same key and one silently shadowed the other; a malformed schema means the tool
+      // exists but cannot be called.
+      const required = [
+        "bannerlord_status", "bannerlord_doctor", "bannerlord_eval", "bannerlord_errors",
+        "bannerlord_equipment", "bannerlord_world", "bannerlord_groupby", "bannerlord_modlog",
+        "bannerlord_snapshot", "bannerlord_checklist",
+      ];
+
+      const names = tools.map((t) => t.name);
+      const missing = required.filter((r) => !names.includes(r));
+      const duplicates = names.filter((n, i) => names.indexOf(n) !== i);
+      const malformed = tools
+        .filter((t) => !t.description || t.inputSchema?.type !== "object")
+        .map((t) => t.name);
+
+      let ok = true;
+      if (missing.length) { console.error("MISSING:", missing.join(", ")); ok = false; }
+      if (duplicates.length) { console.error("DUPLICATE NAMES:", duplicates.join(", ")); ok = false; }
+      if (malformed.length) { console.error("BAD SCHEMA:", malformed.join(", ")); ok = false; }
+      if (toolCount < required.length) { console.error("suspiciously few tools"); ok = false; }
+
+      console.log(ok ? "OK" : "FAILED");
+      process.exit(ok ? 0 : 1);
     }
   }
 });
