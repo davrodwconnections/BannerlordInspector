@@ -25,6 +25,18 @@ namespace BannerlordInspector
         {
             if (string.IsNullOrWhiteSpace(modName)) return new { error = "give a mod or assembly name" };
 
+            // A module is tried FIRST, because on a total conversion the name a person types is
+            // almost always a module and almost never an assembly - and a module can carry dozens of
+            // assemblies that the assembly-name search would silently miss. Only if the module
+            // brings more than its own DLL is the module view actually more informative, so a
+            // one-assembly module falls through to the plain dossier below.
+            string module = ModuleMap.ResolveModule(modName);
+            if (module != null)
+            {
+                List<Assembly> carried = ModuleMap.AssembliesOf(module);
+                if (carried.Count > 1) return ModuleDossier(module, carried);
+            }
+
             Assembly assembly = AppDomain.CurrentDomain.GetAssemblies()
                 .FirstOrDefault(a => SafeName(a).IndexOf(modName, StringComparison.OrdinalIgnoreCase) >= 0);
 
@@ -32,10 +44,10 @@ namespace BannerlordInspector
             {
                 return new
                 {
-                    error = "no loaded assembly matches that name",
+                    error = "no loaded assembly or module matches that name",
                     modName,
-                    hint = "Use /assemblies to see what is loaded. Remember the assembly name can "
-                           + "differ from the module folder name."
+                    hint = "Use /assemblies to see what is loaded, or /modules for the module view. "
+                           + "Remember the assembly name can differ from the module folder name."
                 };
             }
 
@@ -45,6 +57,7 @@ namespace BannerlordInspector
             return new
             {
                 assembly = name,
+                module = ModuleMap.ForAssembly(assembly),
                 version = SafeVersion(assembly),
                 location = SafeLocation(assembly),
                 types = types.Length,
@@ -53,6 +66,81 @@ namespace BannerlordInspector
                 models = ModelsFor(assembly, types),
                 notableTypes = Notable(types)
             };
+        }
+
+        /// <summary>
+        /// A module that ships a whole dependency stack, seen as one thing.
+        ///
+        /// The per-assembly detail is kept deliberately shallow - what it is, what it patched, what
+        /// it registered - because the question this answers is "what is in here and which parts are
+        /// doing something", not "explain every one of these forty DLLs". Ask for any single one by
+        /// name to get the full dossier.
+        /// </summary>
+        private static object ModuleDossier(string module, List<Assembly> carried)
+        {
+            var rows = new List<object>();
+            int active = 0;
+
+            foreach (Assembly assembly in carried.OrderBy(SafeName, StringComparer.OrdinalIgnoreCase))
+            {
+                string name = SafeName(assembly);
+                Type[] types = TypeExplorer.SafeTypes(assembly);
+
+                int patched = CountFrom(HarmonyFor(name, assembly), "methodsPatched");
+                int behaviourCount = CountFrom(BehaviorsFor(assembly), "registered");
+
+                bool doingSomething = patched > 0 || behaviourCount > 0;
+                if (doingSomething) active++;
+
+                rows.Add(new
+                {
+                    assembly = name,
+                    version = SafeVersion(assembly),
+                    types = types.Length,
+                    patchedMethods = patched,
+                    behaviors = behaviourCount,
+                    active = doingSomething
+                });
+            }
+
+            return new
+            {
+                note = "This is a MODULE, and it carries more than one assembly - the pattern total "
+                       + "conversions use to bundle their dependencies. Listed below is everything it "
+                       + "brought and which parts are actually doing something. Ask for any single "
+                       + "assembly by name for its full dossier.",
+                module,
+                assembliesCarried = carried.Count,
+                activeAssemblies = active,
+                inertAssemblies = carried.Count - active,
+                inertNote = "Inert here is usually correct: a bundled library only runs when the code "
+                            + "that uses it asks. It is only worth a look when a library you expect to "
+                            + "be working shows nothing at all.",
+                assemblies = rows.ToArray()
+            };
+        }
+
+        /// <summary>
+        /// Reads a count back out of the anonymous objects the per-assembly helpers produce.
+        ///
+        /// Both can also return an error object with no such property - a type that fails to
+        /// enumerate is normal for a packed or partially-loaded assembly - and that reads as zero,
+        /// which is the honest answer: nothing observed.
+        /// </summary>
+        private static int CountFrom(object source, string property)
+        {
+            try
+            {
+                object value = source?.GetType().GetProperty(property)?.GetValue(source);
+                if (value is int count) return count;
+                if (value is Array array) return array.Length;
+                if (value is System.Collections.ICollection collection) return collection.Count;
+            }
+            catch
+            {
+                // A dossier is worth more with an unknown count than not at all.
+            }
+            return 0;
         }
 
         private static object HarmonyFor(string name, Assembly assembly)

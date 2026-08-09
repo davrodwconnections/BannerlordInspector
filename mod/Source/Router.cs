@@ -157,6 +157,11 @@ namespace BannerlordInspector
                 case "/assemblies":
                     return OnMainThread(() => TypeExplorer.Assemblies(Str(query, "filter")));
 
+                // Which module supplied what. On a total conversion one module carries the whole
+                // dependency stack, so "assembly" and "mod" stop being the same unit.
+                case "/modules":
+                    return OnMainThread(Modules);
+
                 case "/types":
                     return OnMainThread(() => TypeExplorer.FindTypes(
                         Str(query, "q"), Str(query, "assembly"), Limit(query, 60)), 15000);
@@ -396,7 +401,8 @@ namespace BannerlordInspector
                 new { path = "/mod?name=", what = "DOSSIER: one mod's patches, behaviours, models won and lost" },
                 new { path = "/behaviors?filter=", what = "registered campaign behaviours (a missing one never fires)" },
                 new { path = "/mission", what = "mission behaviours, while a battle or scene is running" },
-                new { path = "/assemblies?filter=", what = "every loaded assembly" },
+                new { path = "/assemblies?filter=", what = "every loaded assembly, with the module that supplied it" },
+                new { path = "/modules", what = "which module brought which assemblies - the bundled-dependency view" },
                 new { path = "/types?q=&assembly=", what = "find types by name across all loaded mods" },
                 new { path = "/members?type=", what = "full member surface of a type, including non-public" },
                 new { path = "/call?path=&method=&args=a|b", what = "call a question-shaped method (Get/Is/Has...)" },
@@ -517,6 +523,57 @@ namespace BannerlordInspector
             public string implementation { get; set; }
             public string fromAssembly { get; set; }
             public bool isVanilla { get; set; }
+        }
+
+        /// <summary>
+        /// Modules by how many assemblies each one actually brought into the process.
+        ///
+        /// /mods lists what the launcher knows about; this lists what each of those is really
+        /// carrying. The difference is the point: a module supplying twenty assemblies is a bundled
+        /// dependency stack, and a module supplying none is either a stub folder that exists purely
+        /// to satisfy someone else's dependency, or a data-only mod.
+        /// </summary>
+        private static object Modules()
+        {
+            var loaded = ModuleMap.Modules();
+
+            var rows = loaded.Select(pair => (object)new
+            {
+                module = pair.Key,
+                assemblies = pair.Value,
+                kind = pair.Value >= 5 ? "bundles a dependency stack"
+                     : pair.Value > 1 ? "several assemblies"
+                     : "single assembly"
+            }).ToArray();
+
+            // Folders the launcher lists that put nothing into the process at all.
+            var withCode = new HashSet<string>(loaded.Select(p => p.Key), StringComparer.OrdinalIgnoreCase);
+            string[] codeless;
+
+            try
+            {
+                codeless = ModuleHelper.GetModules()
+                    .Where(m => m != null && !withCode.Contains(m.Id))
+                    .Select(m => m.Id)
+                    .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+            catch
+            {
+                codeless = new string[0];
+            }
+
+            return new
+            {
+                note = "Modules that put assemblies into the running process, most first. Ask /mod "
+                       + "with a module name to see what one is carrying and which parts are live.",
+                withAssemblies = rows.Length,
+                modules = rows,
+                codelessModules = codeless,
+                codelessNote = "These loaded no assembly. Normal for data, XML, scene and asset mods, "
+                               + "and for stub folders that exist only so the launcher can satisfy "
+                               + "another mod's dependency on a library that is bundled elsewhere."
+            };
         }
 
         private static object Mods()

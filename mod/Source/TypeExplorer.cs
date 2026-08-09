@@ -45,6 +45,14 @@ namespace BannerlordInspector
                 rows.Add(new
                 {
                     assembly = name,
+
+                    // Which module folder it was loaded from. Not derivable from the name: a total
+                    // conversion bundles dozens of third-party assemblies inside one module and
+                    // leaves the folders those libraries would normally occupy as empty stubs.
+                    // Without this, "ButterLib is loaded" says nothing about who supplied it -
+                    // which is the whole question when more than one module could have.
+                    module = ModuleMap.ForAssembly(assembly),
+
                     version = SafeVersion(assembly),
                     types = typeCount,
                     location = SafeLocation(assembly)

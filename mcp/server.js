@@ -165,7 +165,11 @@ const TOOLS = [
       "DOSSIER on one mod: its assembly, everything it patched, which campaign behaviours it " +
       "registered (and which it declared but never registered, so they never fire), and which game " +
       "models it owns or LOST to another mod. 'modelsLost' is the interesting one - it means this " +
-      "mod's version of a model never runs because someone registered later.",
+      "mod's version of a model never runs because someone registered later.\n\n" +
+      "Accepts a MODULE name as well as an assembly name. When the module carries more than one " +
+      "assembly - the pattern total conversions use to bundle their dependencies - you get the " +
+      "module view instead: everything it brought and which parts are actually doing something. " +
+      "Then ask again with a single assembly name for its full dossier.",
     inputSchema: {
       type: "object",
       properties: {
@@ -337,6 +341,22 @@ const TOOLS = [
       },
       required: ["action"],
     },
+  },
+
+  {
+    name: "bannerlord_modules",
+    description:
+      "WHICH MODULE SUPPLIED WHICH ASSEMBLY. Use on a total conversion, where 'mod' and 'assembly' " +
+      "stop being the same unit.\n\n" +
+      "TAOM bundles its whole dependency stack — Harmony, ButterLib, MCM, UIExtenderEx, Serilog, the " +
+      "BUTR crash reporter — inside a single module, and leaves the folders those libraries would " +
+      "normally live in as empty stubs so the launcher can still satisfy other mods' dependencies. " +
+      "So 'ButterLib is loaded' tells you nothing about who supplied it, and the stub folders look " +
+      "like broken installs when they are working exactly as intended.\n\n" +
+      "Lists modules by how many assemblies each actually put into the process, plus the ones that " +
+      "loaded no code at all (data mods, scene mods, and those stubs). Follow up with " +
+      "bannerlord_mod on any module name.",
+    inputSchema: { type: "object", properties: {} },
   },
 
   // ---------------------------------------------------------------- auditing content
@@ -755,6 +775,7 @@ const ROUTES = {
   bannerlord_patches: (a) =>
     ask("/patches", { owner: a.owner, target: a.target, limit: a.limit }, SLOW_TIMEOUT_MS),
   bannerlord_mod: (a) => ask("/mod", { name: a.name }, SLOW_TIMEOUT_MS),
+  bannerlord_modules: () => ask("/modules", {}, SLOW_TIMEOUT_MS),
   bannerlord_behaviors: (a) =>
     a.mission ? ask("/mission") : ask("/behaviors", { filter: a.filter }),
   bannerlord_mcm: (a) => ask("/mcm", { filter: a.filter, values: a.values }, SLOW_TIMEOUT_MS),
