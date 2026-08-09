@@ -260,9 +260,35 @@ namespace BannerlordInspector
                 case Occupation.Headman:
                 case Occupation.GangLeader:
                     return false;
+
+                // Prison guards stand in a scene doing nothing. Every culture has one, so including
+                // them is a guaranteed finding per culture on a perfectly healthy install.
+                case Occupation.PrisonGuard:
+                    return false;
+
                 default:
-                    return true;
+                    return Safe(() => character.StringId) is string id && !IsProp(id);
             }
+        }
+
+        /// <summary>
+        /// Scene props masquerading as troops.
+        ///
+        /// Training dummies and weapon-practice targets are registered as Soldier characters with
+        /// full occupation, so occupation alone cannot tell them apart from real troops - and there
+        /// are enough of them to swamp everything else. Naming conventions are the only signal
+        /// available, and they are consistent enough across modding to be worth using: this cut the
+        /// unarmed count from 294 to the handful that are actually worth looking at.
+        ///
+        /// It is a heuristic, and a troop legitimately named "dummy" would be hidden by it. That
+        /// trade is worth making - a list nobody reads finds nothing at all. Pass all=true to see
+        /// everything.
+        /// </summary>
+        private static bool IsProp(string id)
+        {
+            return id.IndexOf("dummy", StringComparison.OrdinalIgnoreCase) >= 0
+                   || id.IndexOf("practice", StringComparison.OrdinalIgnoreCase) >= 0
+                   || id.IndexOf("template", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool IsEmpty(Equipment equipment, EquipmentIndex slot)
