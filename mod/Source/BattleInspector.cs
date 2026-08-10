@@ -130,22 +130,40 @@ namespace BannerlordInspector
 
             var flags = new List<string>();
 
-            if (formation == null)
-            {
-                flags.Add("The player is in NO formation. He will not receive formation orders and "
-                          + "will not move with any line.");
-            }
-            else if (formationUnits <= 1)
-            {
-                flags.Add("The player is ALONE in his formation (" + formationUnits + " unit). He is "
-                          + "not standing in anyone's line even if he looks like he is - this is the "
-                          + "shape of the 'one-man formation' bug.");
-            }
+            // Every flag below assumes an army is supposed to be standing around the player. In a
+            // town, an arena, a hideout conversation or any walk-around scene, having no formation
+            // and no team is simply what being there looks like - and raising three anomalies for
+            // walking into a tavern is how a check gets ignored on the day it is right.
+            //
+            // This route was written for a field-battle question and would have shipped flagging
+            // every town visit as a bug. Caught by re-reading it rather than by running it, which
+            // is luckier than it sounds: nobody would have believed it afterwards.
+            bool armyExpected = SafeGet(() => mission.IsFieldBattle) || SafeGet(() => mission.IsSiegeBattle);
 
-            if (team != null && teamAgents <= 1)
+            if (!armyExpected)
             {
-                flags.Add("The player's team has " + teamAgents + " active agent(s). He is on a team "
-                          + "of his own rather than the commander's.");
+                flags.Add("Not a field battle or siege, so formation and team are not expected here - "
+                          + "no conclusions drawn.");
+            }
+            else
+            {
+                if (formation == null)
+                {
+                    flags.Add("The player is in NO formation. He will not receive formation orders and "
+                              + "will not move with any line.");
+                }
+                else if (formationUnits <= 1)
+                {
+                    flags.Add("The player is ALONE in his formation (" + formationUnits + " unit). He is "
+                              + "not standing in anyone's line even if he looks like he is - this is the "
+                              + "shape of the 'one-man formation' bug.");
+                }
+
+                if (team != null && teamAgents <= 1)
+                {
+                    flags.Add("The player's team has " + teamAgents + " active agent(s). He is on a team "
+                              + "of his own rather than the commander's.");
+                }
             }
 
             return new
@@ -173,9 +191,11 @@ namespace BannerlordInspector
                                                  && mission.PlayerTeam.PlayerOrderController
                                                      .SelectedFormations.Count > 0),
                 flags = flags.ToArray(),
-                verdict = flags.Count == 0
-                    ? "The player is embedded in a formation with other troops - the normal case."
-                    : "Something about the player's placement is irregular; see flags."
+                verdict = !armyExpected
+                    ? "Not a battle - nothing to judge about placement here."
+                    : flags.Count == 0
+                        ? "The player is embedded in a formation with other troops - the normal case."
+                        : "Something about the player's placement is irregular; see flags."
             };
         }
 
