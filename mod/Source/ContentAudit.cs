@@ -266,6 +266,28 @@ namespace BannerlordInspector
                 case Occupation.PrisonGuard:
                     return false;
 
+                // Town trades. A tavernkeeper with no sword is correct content, and every culture
+                // ships a full set of them - blacksmith, armourer, musician, horse trader, arena
+                // master and the rest - so on a conversion with a dozen cultures this alone was
+                // 152 findings on a healthy install, all of them people whose job is not fighting.
+                //
+                // This is the fourth pass at the same lesson: villagers, then training dummies,
+                // then prison guards, now the trades. Occupation is the only honest signal for
+                // "is this character supposed to carry a weapon", and it has to be read fully
+                // rather than topped up each time output looks noisy.
+                case Occupation.Blacksmith:
+                case Occupation.Armorer:
+                case Occupation.Weaponsmith:
+                case Occupation.ShopWorker:
+                case Occupation.Tavernkeeper:
+                case Occupation.TavernGameHost:
+                case Occupation.TavernWench:
+                case Occupation.Musician:
+                case Occupation.ArenaMaster:
+                case Occupation.HorseTrader:
+                case Occupation.GoodsTrader:
+                    return false;
+
                 default:
                     return Safe(() => character.StringId) is string id && !IsProp(id);
             }
