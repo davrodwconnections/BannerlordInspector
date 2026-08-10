@@ -93,11 +93,29 @@ namespace BannerlordInspector
             bool anyLayerWantsMouse = layers.Any(l =>
                 Equals(l.GetType().GetProperty("wantsMouseVisible")?.GetValue(l), true));
 
+            // NOT a flag, and the reason is a lesson worth keeping.
+            //
+            // This started life as a warning: "a layer wants a cursor and the screen says no,
+            // therefore the screen is unusable". It matched a real frozen menu once, which was
+            // enough to make it look like a diagnosis. Then it fired on CharacterCreationScreen,
+            // in the middle of a character creation the user was clicking through perfectly
+            // happily.
+            //
+            // So ScreenBase.MouseVisible is not the switch it appears to be - it sits false on
+            // screens that work fine, and the engine gets its cursor from somewhere else. One
+            // matching case was correlation, and treating it as a cause produced a confident
+            // explanation of a bug that was, as far as this can show, wrong.
+            //
+            // Reported as an observation instead. Whoever reads it can weigh it; the tool no
+            // longer pretends to know what it means.
+            var observations = new List<string>();
+
             if (!mouseVisible && anyLayerWantsMouse)
             {
-                flags.Add("A layer asks for a visible mouse but the screen has mouseVisible=false. "
-                          + "The screen renders and accepts nothing - it will be reported as frozen "
-                          + "and the game will be fine.");
+                observations.Add("A layer asks for a visible mouse while the screen reports "
+                                 + "mouseVisible=false. This is COMMON on working screens - it shows "
+                                 + "up during character creation, where the mouse is fine - so it is "
+                                 + "not evidence of anything on its own.");
             }
 
             if (Safe(() => top.IsFinalized))
@@ -118,7 +136,8 @@ namespace BannerlordInspector
                 mouseVisible,
                 layerCount = layers.Count,
                 layers = layers.ToArray(),
-                flags = flags.ToArray()
+                flags = flags.ToArray(),
+                observations = observations.ToArray()
             };
         }
 

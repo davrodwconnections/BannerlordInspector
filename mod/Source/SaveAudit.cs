@@ -123,11 +123,37 @@ namespace BannerlordInspector
                 });
             }
 
+            // Coverage decides whether a clean result means anything. The base id is set through a
+            // constructor, and reading it from an uninitialized instance only works for definers
+            // that assign it inline - which on a real install was 5 of 76. Reporting "no
+            // collisions" off a 7% sample is not a reassuring answer, it is a false one, and a
+            // check that says "fine" when it means "could not look" is worse than no check.
+            int readable = definers.Count - unreadable;
+            bool conclusive = definers.Count > 0 && readable * 2 >= definers.Count;
+
             return new
             {
+                verdict = !conclusive
+                    ? "NOT CONCLUSIVE - only " + readable + " of " + definers.Count + " base ids "
+                      + "could be read, so a clean result here proves nothing. The id is assigned in "
+                      + "a constructor this cannot safely run (doing so would execute another mod's "
+                      + "code, which this tool does not do). Treat the collision counts below as "
+                      + "covering the readable ones only."
+                    : collisions.Length == 0 && tooClose.Count == 0
+                        ? "Clean, and on enough of the set to mean it."
+                        : "Problems found - see below.",
+
+                coverage = new
+                {
+                    definers = definers.Count,
+                    idsRead = readable,
+                    idsUnreadable = unreadable,
+                    conclusive
+                },
+
                 note = collisions.Length == 0 && tooClose.Count == 0
-                    ? "No save-id collisions. Every mod that persists data claims a distinct, "
-                      + "well-spaced base id - which is what a save shared between mods needs."
+                    ? "No save-id collisions AMONG THE IDS THAT COULD BE READ. Check 'coverage' "
+                      + "before drawing any conclusion from that."
                     : "Save-id problems. Two mods numbering their saved types into the same range "
                       + "write different objects under the same key, and the save becomes something "
                       + "neither reads back correctly. The failure shows up later, elsewhere, and "

@@ -371,10 +371,56 @@ namespace BannerlordInspector
                    || assembly.Equals("BannerlordInspector", StringComparison.Ordinal);
         }
 
+        /// <summary>
+        /// The stack, falling back to the calling thread's own when the exception has none yet.
+        ///
+        /// This is the price of catching exceptions at throw time. FirstChance fires BEFORE the
+        /// exception propagates, so <c>ex.StackTrace</c> holds only the frame that threw - and when
+        /// the thrower is deep inside the framework, that single frame names the framework and
+        /// nobody else. An AmbiguousMatchException reported "at RuntimeType.GetMethodImpl" and
+        /// nothing more: true, useless, and unattributable to any mod.
+        ///
+        /// Walking the live thread stack instead gives the chain that led there, which is where the
+        /// culprit actually is. It is the expensive call in this class, so it happens only when the
+        /// cheap answer came back too thin, and only once per distinct signature - the same budget
+        /// that already governs formatting.
+        /// </summary>
         private static string SafeStack(Exception ex)
         {
-            try { return Truncate(ex.StackTrace ?? "(no stack)", StackCap); }
+            string fromException;
+
+            try { fromException = ex.StackTrace; }
             catch { return "(stack unavailable)"; }
+
+            bool tooThin = string.IsNullOrEmpty(fromException)
+                           || CountLines(fromException) < 3;
+
+            if (!tooThin) return Truncate(fromException, StackCap);
+
+            try
+            {
+                // Skip this method and Record(); the caller is what matters. fNeedFileInfo:false -
+                // resolving source lines here would cost far more than the answer is worth.
+                string fromThread = new StackTrace(2, false).ToString();
+
+                if (string.IsNullOrEmpty(fromThread)) return Truncate(fromException ?? "(no stack)", StackCap);
+
+                return Truncate(
+                    (string.IsNullOrEmpty(fromException) ? "" : fromException.TrimEnd() + "\n")
+                    + "--- thrown from (calling thread) ---\n" + fromThread,
+                    StackCap);
+            }
+            catch
+            {
+                return Truncate(fromException ?? "(no stack)", StackCap);
+            }
+        }
+
+        private static int CountLines(string text)
+        {
+            int n = 1;
+            foreach (char c in text) if (c == '\n') n++;
+            return n;
         }
 
         private static string SafeThread()
