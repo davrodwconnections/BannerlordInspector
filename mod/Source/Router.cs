@@ -154,6 +154,27 @@ namespace BannerlordInspector
                 case "/mission":
                     return OnMainThread(BehaviorsInspector.MissionBehaviors);
 
+                // The battle itself, rather than the code running it: teams, formations, and where
+                // the player actually sits among them.
+                case "/battle":
+                    return OnMainThread(BattleInspector.Current);
+
+                // What owns the input, and whether it can be clicked at all.
+                case "/screens":
+                case "/screen":
+                    return OnMainThread(ScreenInspector.Current);
+
+                // Names the player would see wrong. Walks every registry, so it gets the long budget.
+                case "/text":
+                    return OnMainThread(() => TextAudit.Run(Str(query, "q"), Limit(query, 25)), 25000);
+
+                // Other mods' crash bundles. Files, not game state - answers while the game is hung.
+                case "/crashes":
+                    return string.IsNullOrWhiteSpace(Str(query, "name"))
+                        ? CrashReports.List()
+                        : CrashReports.Read(Str(query, "name"), Str(query, "entry"),
+                                            Str(query, "q"), Limit(query, 120));
+
                 case "/assemblies":
                     return OnMainThread(() => TypeExplorer.Assemblies(Str(query, "filter")));
 
@@ -401,6 +422,11 @@ namespace BannerlordInspector
                 new { path = "/mod?name=", what = "DOSSIER: one mod's patches, behaviours, models won and lost" },
                 new { path = "/behaviors?filter=", what = "registered campaign behaviours (a missing one never fires)" },
                 new { path = "/mission", what = "mission behaviours, while a battle or scene is running" },
+                new { path = "/battle", what = "IN BATTLE: teams, formations, and where the player actually sits" },
+                new { path = "/text?q=", what = "names the player sees wrong: raw {=keys}, blanks, ids used as names" },
+                new { path = "/crashes", what = "list other mods' crash bundles" },
+                new { path = "/crashes?name=&entry=&q=", what = "read inside one - rgl_log is where silent failures live" },
+                new { path = "/screens", what = "FROZEN UI: what owns the input, whether it has a cursor, and the active campaign menu" },
                 new { path = "/assemblies?filter=", what = "every loaded assembly, with the module that supplied it" },
                 new { path = "/modules", what = "which module brought which assemblies - the bundled-dependency view" },
                 new { path = "/types?q=&assembly=", what = "find types by name across all loaded mods" },

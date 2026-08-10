@@ -69,6 +69,14 @@
     <Compile Remove="dist\**" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Framework assemblies, not game ones. Crash bundles are zips, and opening one from inside
+         the running game is the whole point of /crashes - the alternative is alt-tabbing to a
+         folder and picking through an archive by hand, every time. -->
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+
   <Target Name="StageModule" AfterTargets="Build">
     <Copy SourceFiles="SubModule.xml" DestinationFolder="$(MSBuildProjectDirectory)\dist\" SkipUnchangedFiles="true" />
     <Message Importance="high" Text="Staged at $(MSBuildProjectDirectory)\dist\ (not deployed)" />

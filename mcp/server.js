@@ -344,6 +344,81 @@ const TOOLS = [
   },
 
   {
+    name: "bannerlord_battle",
+    description:
+      "THE BATTLE YOU ARE STANDING IN: teams, the formations inside them, and exactly where the " +
+      "player sits among them.\n\n" +
+      "Built for the class of bug that is invisible on screen. 'The enlisted soldier stands in a " +
+      "formation on his own rather than the lord's line' cannot be judged by eye — a soldier " +
+      "standing NEAR a line looks identical to one standing IN it, and the difference is which Team " +
+      "and Formation he belongs to.\n\n" +
+      "The 'player' section draws the conclusion instead of leaving it to you: it flags a player " +
+      "alone in his formation, a player in no formation at all (he receives no orders and moves " +
+      "with nobody), and a player on a team of one.\n\n" +
+      "Reports structure, not spectacle — it does not enumerate agents, because a field battle has " +
+      "thousands and a list of thousands answers nothing. Returns inBattle=false on the campaign map.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "bannerlord_screens",
+    description:
+      "WHAT OWNS THE INPUT, and whether it can be clicked at all.\n\n" +
+      "Read this FIRST when the user says the game is frozen. A screen that renders but has " +
+      "mouseVisible=false is indistinguishable from a hang and is not one — that exact case cost an " +
+      "evening: the game was running at 200 FPS behind a mod options screen with no cursor.\n\n" +
+      "Gives the top screen and which module it came from, its layers, and for each layer whether it " +
+      "asks for a visible mouse. When a layer wants a cursor and the screen says no, it says so " +
+      "outright.\n\n" +
+      "Also reports the active campaign menu, which is a different layer and the one behind 'a menu " +
+      "keeps opening on its own' — pair it with bannerlord_watch to catch what is re-opening it.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "bannerlord_text",
+    description:
+      "NAMES THE PLAYER WOULD SEE WRONG. Walks every registry — cultures, clans, kingdoms, troops, " +
+      "settlements, items — and reports three failures, worst first:\n" +
+      "  unresolvedKey - a raw {=key} on screen; the localization key was never registered\n" +
+      "  blank         - the name resolved to nothing, leaving an empty space\n" +
+      "  idAsName      - the player is reading 'npc_goblin_archer_3'; no display name was authored\n\n" +
+      "None of these throws, none appears in a log, and none is visible until you play far enough " +
+      "to meet the object — which for a wanderer or a late-game troop can be never.\n\n" +
+      "This is the RUNTIME half of the answer: what the game will actually put on screen after " +
+      "every XSLT, merge and language file has had its say. An on-disk check sees the other half " +
+      "(keys declared but never used) and the two disagree in both directions. Both matter.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        q: { type: "string", description: "Only objects whose id matches this, e.g. 'goblin'." },
+        limit: { type: "number", description: "Max rows per category. Default 25." },
+      },
+    },
+  },
+  {
+    name: "bannerlord_crashes",
+    description:
+      "READ CRASH BUNDLES from inside the game. Call with no arguments to list them (newest first), " +
+      "then name= to see what is in one, then entry= to read it.\n\n" +
+      "TAOM's crash reporter and BUTR's both drop a zip per incident holding a JSON report, the " +
+      "engine's rgl_log and the modlist. Good reports — that until now meant leaving the game, " +
+      "finding a folder and picking through an archive.\n\n" +
+      "**Read rgl_log.txt when nothing threw.** That is where the failures with no managed " +
+      "exception live: missing texture data, failed asset loads, engine-level complaints. A whole " +
+      "evening once went into a UI rendering as text on black — zero exceptions anywhere, and forty " +
+      "lines of 'Unable to find data ...' sitting in that log.\n\n" +
+      "A reader, not a second crash reporter: two systems disagreeing about one crash is worse than " +
+      "one system in an awkward folder.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Bundle file name from the listing." },
+        entry: { type: "string", description: "File inside the bundle, e.g. 'rgl_log'." },
+        q: { type: "string", description: "Only lines containing this." },
+        limit: { type: "number", description: "Lines to return. Default 120, max 400." },
+      },
+    },
+  },
+  {
     name: "bannerlord_modules",
     description:
       "WHICH MODULE SUPPLIED WHICH ASSEMBLY. Use on a total conversion, where 'mod' and 'assembly' " +
@@ -776,6 +851,10 @@ const ROUTES = {
     ask("/patches", { owner: a.owner, target: a.target, limit: a.limit }, SLOW_TIMEOUT_MS),
   bannerlord_mod: (a) => ask("/mod", { name: a.name }, SLOW_TIMEOUT_MS),
   bannerlord_modules: () => ask("/modules", {}, SLOW_TIMEOUT_MS),
+  bannerlord_battle: () => ask("/battle"),
+  bannerlord_screens: () => ask("/screens"),
+  bannerlord_text: (a) => ask("/text", { q: a.q, limit: a.limit }, SLOW_TIMEOUT_MS),
+  bannerlord_crashes: (a) => ask("/crashes", { name: a.name, entry: a.entry, q: a.q, limit: a.limit }),
   bannerlord_behaviors: (a) =>
     a.mission ? ask("/mission") : ask("/behaviors", { filter: a.filter }),
   bannerlord_mcm: (a) => ask("/mcm", { filter: a.filter, values: a.values }, SLOW_TIMEOUT_MS),
