@@ -23,9 +23,16 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
 
-    <!-- Read only, for reference assemblies. Never written to by a plain build. -->
+    <!-- The game folder is READ ONLY here - it supplies reference assemblies and is never written
+         to by a plain build. Set BANNERLORD_GAME_DIR to point at your install; the fallbacks below
+         are the two default Steam locations, tried in order, so a standard install needs no setup
+         and a non-standard one gets a clear error rather than a confusing missing-reference wall. -->
+    <_SteamDefault>C:\Program Files (x86)\Steam\steamapps\common\Mount &amp; Blade II Bannerlord</_SteamDefault>
+    <_SteamLibraryD>D:\SteamLibrary\steamapps\common\Mount &amp; Blade II Bannerlord</_SteamLibraryD>
+
     <GameFolder Condition="'$(BANNERLORD_GAME_DIR)' != ''">$(BANNERLORD_GAME_DIR)</GameFolder>
-    <GameFolder Condition="'$(BANNERLORD_GAME_DIR)' == ''">D:\SteamLibrary\steamapps\common\Mount &amp; Blade II Bannerlord</GameFolder>
+    <GameFolder Condition="'$(GameFolder)' == '' AND Exists('$(_SteamDefault)\bin\Win64_Shipping_Client\Bannerlord.exe')">$(_SteamDefault)</GameFolder>
+    <GameFolder Condition="'$(GameFolder)' == '' AND Exists('$(_SteamLibraryD)\bin\Win64_Shipping_Client\Bannerlord.exe')">$(_SteamLibraryD)</GameFolder>
 
     <OutputPath>$(MSBuildProjectDirectory)\dist\bin\Win64_Shipping_Client\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -57,6 +64,11 @@
     <HarmonyPath Condition="'$(HarmonyPath)' == '' AND Exists('$(_HarmonyTaom)')">$(_HarmonyTaom)</HarmonyPath>
     <HarmonyPath Condition="'$(HarmonyPath)' == '' AND Exists('$(_HarmonyArchive)')">$(_HarmonyArchive)</HarmonyPath>
   </PropertyGroup>
+
+  <Target Name="CheckGameFolder" BeforeTargets="ResolveReferences">
+    <Error Condition="'$(GameFolder)' == ''"
+           Text="No Bannerlord install found. Set BANNERLORD_GAME_DIR to your game folder (the one containing bin\Win64_Shipping_Client\Bannerlord.exe). Tried: $(_SteamDefault) and $(_SteamLibraryD)." />
+  </Target>
 
   <Target Name="ReportHarmonySource" BeforeTargets="ResolveReferences">
     <Error Condition="'$(HarmonyPath)' == ''"

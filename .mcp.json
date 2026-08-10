@@ -2,7 +2,7 @@
   "mcpServers": {
     "bannerlord": {
       "command": "node",
-      "args": ["D:\\Proyectos\\BannerlordInspector\\mcp\\server.js"],
+      "args": ["mcp/server.js"],
       "env": {
         "BANNERLORD_INSPECTOR_PORT": "8420"
       }

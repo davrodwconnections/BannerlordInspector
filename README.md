@@ -337,3 +337,28 @@ remember to edit and therefore a test that fails silently. Separates "the bridge
 
 `Modules/BannerlordInspector/logs/inspector.log` — startup, the bound port, every `/call`, and any
 failed request.
+
+## Building it yourself
+
+The build reads the game folder for reference assemblies and never writes to it. It finds a standard
+Steam install on its own; point it elsewhere with `BANNERLORD_GAME_DIR`:
+
+```
+set BANNERLORD_GAME_DIR=E:\Games\Mount & Blade II Bannerlord
+dotnet build mod\BannerlordInspector.csproj -c Release
+```
+
+That stages the module under `mod\dist\` without touching the game. Add `-p:Deploy=true` to install
+it, and close the launcher first — it holds the DLL open.
+
+Harmony is resolved at build time from whichever module actually ships it, and the build prints
+which one it chose. On a normal install that is `Bannerlord.Harmony`; on a total conversion that
+folder is often an empty stub and the real `0Harmony.dll` lives inside the conversion's own
+dependency module.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).
+
+Not affiliated with TaleWorlds Entertainment. Mount & Blade II: Bannerlord is their trademark; this
+reads a running copy of it and modifies nothing.
