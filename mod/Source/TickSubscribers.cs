@@ -90,14 +90,14 @@ namespace BannerlordInspector
             };
         }
 
-        private sealed class Subscriber
+        internal sealed class Subscriber
         {
             public string Assembly;
             public string Method;
         }
 
         /// <summary>Reads CampaignEvents.SomeEvent, which is a static property returning the MbEvent.</summary>
-        private static object ReadEvent(string propertyName)
+        internal static object ReadEvent(string propertyName)
         {
             try
             {
@@ -115,7 +115,7 @@ namespace BannerlordInspector
         /// arities differ per event, so everything here is by name and defensive: an event whose
         /// shape has moved is skipped, not fatal.
         /// </summary>
-        private static List<Subscriber> WalkListeners(object mbEvent)
+        internal static List<Subscriber> WalkListeners(object mbEvent)
         {
             var found = new List<Subscriber>();
 

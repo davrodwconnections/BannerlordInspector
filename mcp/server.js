@@ -374,6 +374,46 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "bannerlord_events",
+    description:
+      "WHO IS LISTENING TO WHAT. The answer to 'my feature never fires'.\n\n" +
+      "A behaviour that registered fine but subscribed to nothing looks, from outside, exactly like " +
+      "one whose logic is wrong — and they have nothing in common as problems. Silence is the " +
+      "symptom either way.\n\n" +
+      "**Use mod= — that is the useful direction.** `mod=TAOM` lists every campaign event TAOM " +
+      "subscribes to, and an event missing from that list is a finished diagnosis: code that is not " +
+      "subscribed cannot fire, however correct it is. If nothing subscribes to MapEventEnded, the " +
+      "feature cannot react to a battle.\n\n" +
+      "Covers every event on CampaignEvents, enumerated at runtime rather than from a hard-coded " +
+      "list, so it keeps covering whatever a new game version adds. Complements " +
+      "bannerlord_tick_subscribers, which goes deeper on the twelve tick events specifically.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        mod: { type: "string", description: "Only events this mod subscribes to. The useful filter." },
+        q: { type: "string", description: "Only events whose name matches, e.g. 'Settlement'." },
+        subscribedOnly: { type: "boolean", description: "Skip events nobody listens to." },
+        limit: { type: "number", description: "Max events returned. Default 40." },
+      },
+    },
+  },
+  {
+    name: "bannerlord_save",
+    description:
+      "CAN THIS MODLIST SHARE A SAVE FILE? Checks for save-id collisions between mods.\n\n" +
+      "Mods that persist data declare a base id, and number everything they save relative to it. " +
+      "The engine does not police those numbers, and plenty of mods pick round ones like 1000. Two " +
+      "mods in the same range write different objects under the same key and the save quietly " +
+      "becomes something neither reads back correctly.\n\n" +
+      "The failure arrives later and elsewhere — a campaign that loads with a mod's data scrambled, " +
+      "or a load that dies naming a mod that did nothing wrong. Nobody suspects the numbering " +
+      "because nothing in the game ever mentions it.\n\n" +
+      "Reports exact collisions and ids close enough that their ranges plausibly overlap. A " +
+      "collision is not proof of corruption, but it is the first thing to rule out when saves " +
+      "misbehave on a heavy modlist. Nothing else checks this.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "bannerlord_text",
     description:
       "NAMES THE PLAYER WOULD SEE WRONG. Walks every registry — cultures, clans, kingdoms, troops, " +
@@ -853,6 +893,10 @@ const ROUTES = {
   bannerlord_modules: () => ask("/modules", {}, SLOW_TIMEOUT_MS),
   bannerlord_battle: () => ask("/battle"),
   bannerlord_screens: () => ask("/screens"),
+  bannerlord_events: (a) =>
+    ask("/events", { mod: a.mod, q: a.q, subscribedOnly: a.subscribedOnly, limit: a.limit },
+      SLOW_TIMEOUT_MS),
+  bannerlord_save: () => ask("/save", {}, SLOW_TIMEOUT_MS),
   bannerlord_text: (a) => ask("/text", { q: a.q, limit: a.limit }, SLOW_TIMEOUT_MS),
   bannerlord_crashes: (a) => ask("/crashes", { name: a.name, entry: a.entry, q: a.q, limit: a.limit }),
   bannerlord_behaviors: (a) =>

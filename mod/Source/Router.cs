@@ -164,6 +164,16 @@ namespace BannerlordInspector
                 case "/screen":
                     return OnMainThread(ScreenInspector.Current);
 
+                // Who listens to what. "My feature never fires" is usually answered here.
+                case "/events":
+                    return OnMainThread(() => CampaignEventInspector.Run(
+                        Str(query, "q"), Str(query, "mod"),
+                        Flag(query, "subscribedonly"), Limit(query, 40)), 25000);
+
+                // Whether this modlist can safely share a save file.
+                case "/save":
+                    return OnMainThread(SaveAudit.Run, 25000);
+
                 // Names the player would see wrong. Walks every registry, so it gets the long budget.
                 case "/text":
                     return OnMainThread(() => TextAudit.Run(Str(query, "q"), Limit(query, 25)), 25000);
@@ -423,6 +433,8 @@ namespace BannerlordInspector
                 new { path = "/behaviors?filter=", what = "registered campaign behaviours (a missing one never fires)" },
                 new { path = "/mission", what = "mission behaviours, while a battle or scene is running" },
                 new { path = "/battle", what = "IN BATTLE: teams, formations, and where the player actually sits" },
+                new { path = "/events?mod=&q=", what = "who subscribes to which campaign event - answers 'my feature never fires'" },
+                new { path = "/save", what = "save-id collisions between mods, the silent save-corruption cause" },
                 new { path = "/text?q=", what = "names the player sees wrong: raw {=keys}, blanks, ids used as names" },
                 new { path = "/crashes", what = "list other mods' crash bundles" },
                 new { path = "/crashes?name=&entry=&q=", what = "read inside one - rgl_log is where silent failures live" },
