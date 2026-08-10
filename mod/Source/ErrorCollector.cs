@@ -59,6 +59,7 @@ namespace BannerlordInspector
         private static long _totalSeen;
         private static long _dropped;
         private static long _fatal;
+        private static long _selfSuppressed;
         private static int _windowCount;
         private static DateTime _windowStart = DateTime.UtcNow;
         private static DateTime _armedAt;
@@ -124,6 +125,7 @@ namespace BannerlordInspector
                 Groups.Clear();
                 _totalSeen = 0;
                 _dropped = 0;
+                _selfSuppressed = 0;
                 _fatal = 0;
                 _windowCount = 0;
                 _windowStart = DateTime.UtcNow;
@@ -178,6 +180,24 @@ namespace BannerlordInspector
                 }
 
                 string signature = type + "|" + message;
+
+                // --- our own noise, discarded before it can pass for a finding ------------
+                //
+                // The dispatcher throws a TimeoutException whenever the main thread has not ticked
+                // in time, which is precisely what a save load looks like from outside. Polling
+                // during a load therefore made this recorder report ITS OWN timeouts as game
+                // faults: three of the first four findings in its first real session were
+                // self-inflicted, and one of them said the game "appears HUNG" while it was busy
+                // loading normally.
+                //
+                // A diagnostic that reports itself teaches people to skim its output, and that
+                // costs far more than these entries are worth. Counted rather than dropped in
+                // silence, so the suppression is visible.
+                if (IsOurOwn(ex))
+                {
+                    lock (Sync) { _selfSuppressed++; }
+                    return;
+                }
 
                 // --- cheap path: seen before, or over budget -----------------------------
                 lock (Sync)
@@ -283,6 +303,29 @@ namespace BannerlordInspector
         /// a bug in vanilla code - but "TAOM" beats "some exception happened" every time when the
         /// question is which mod to look at first.
         /// </summary>
+        /// <summary>
+        /// Whether this exception came out of the inspector itself.
+        ///
+        /// Matched on the declaring type rather than the message, because messages are written for
+        /// people and get reworded. The dispatcher's timeout is the one that matters - it fires
+        /// every time the main thread is busy, which includes every save load.
+        /// </summary>
+        private static bool IsOurOwn(Exception ex)
+        {
+            try
+            {
+                if (ex is TimeoutException
+                    && ex.TargetSite?.DeclaringType?.Namespace == "BannerlordInspector") return true;
+
+                Type declaring = ex.TargetSite?.DeclaringType;
+                return declaring?.Assembly == typeof(ErrorCollector).Assembly;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static string Blame(Exception ex)
         {
             try
@@ -362,7 +405,7 @@ namespace BannerlordInspector
         public static object Report(string blameFilter, string textFilter, int sinceSeconds, int limit, bool full)
         {
             List<Group> snapshot;
-            long totalSeen, dropped, fatal;
+            long totalSeen, dropped, fatal, selfSuppressed;
             bool armed;
             DateTime armedAt;
 
@@ -371,6 +414,7 @@ namespace BannerlordInspector
                 snapshot = Groups.Values.Select(Copy).ToList();
                 totalSeen = _totalSeen;
                 dropped = _dropped;
+                selfSuppressed = _selfSuppressed;
                 fatal = _fatal;
                 armed = _armed;
                 armedAt = _armedAt;
@@ -435,6 +479,10 @@ namespace BannerlordInspector
                 shown = groups.Length,
                 fatal,
                 droppedOverBudget = dropped,
+
+                // Our own timeouts, kept out of the findings. Reported so the filtering is
+                // visible: a recorder that quietly hides things is its own kind of lie.
+                selfSuppressed,
                 groups
             };
         }

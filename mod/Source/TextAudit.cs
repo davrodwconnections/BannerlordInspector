@@ -69,6 +69,12 @@ namespace BannerlordInspector
                     if (!string.IsNullOrEmpty(filter)
                         && id.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
 
+                    // Scene props and templates never had a display name and were never meant to.
+                    // The first real run reported 79 of them - every tournament participant
+                    // template - which is how a check teaches people to skip its output. Same
+                    // criterion as the equipment sweep, kept in one place so the two cannot drift.
+                    if (ContentAudit.IsProp(id)) continue;
+
                     examined++;
 
                     string name = Safe(() => AccessTools.Property(obj.GetType(), "Name")

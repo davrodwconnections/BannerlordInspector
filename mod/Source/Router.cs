@@ -294,8 +294,19 @@ namespace BannerlordInspector
         private static object OnMainThread(Func<object> work, int timeoutMs) =>
             MainThreadDispatcher.Run(work, timeoutMs, _currentRoute);
 
-        private static string Str(IDictionary<string, string> query, string key) =>
-            query.TryGetValue(key, out string value) ? value : null;
+        private static string Str(IDictionary<string, string> query, string key)
+        {
+            if (query.TryGetValue(key, out string value)) return value;
+
+            // 'q' and 'filter' both grew here meaning the same thing, and which route wanted which
+            // was memorable to nobody - including the person who wrote them, who lost a round trip
+            // to /behaviors?q= silently returning all 212 behaviours unfiltered. A filter that is
+            // quietly ignored is worse than one that errors: the answer looks complete.
+            if (key == "q" && query.TryGetValue("filter", out value)) return value;
+            if (key == "filter" && query.TryGetValue("q", out value)) return value;
+
+            return null;
+        }
 
         private static bool Flag(IDictionary<string, string> query, string key)
         {
@@ -470,12 +481,34 @@ namespace BannerlordInspector
             Campaign c = Campaign.Current;
             if (c == null) return new { campaignLoaded = false, note = "No campaign is loaded - you are in a menu." };
 
+            // Campaign.Current is set before the campaign time is initialised, so during a load
+            // there is a window where CampaignTime.Now.ToString() divides by zero inside the
+            // engine. Asking for the date while a save loads therefore produced a
+            // DivideByZeroException attributed to TaleWorlds - a fault this route caused and then
+            // reported as if the game had done it.
+            string date = null;
+            int day = 0;
+            bool timeReady = true;
+
+            try
+            {
+                date = CampaignTime.Now.ToString();
+                day = (int)CampaignTime.Now.ToDays;
+            }
+            catch
+            {
+                timeReady = false;
+            }
+
             return new
             {
                 campaignLoaded = true,
                 campaignId = c.UniqueGameId,
-                date = CampaignTime.Now.ToString(),
-                day = (int)CampaignTime.Now.ToDays,
+                date,
+                day,
+                timeReady,
+                stillLoading = !timeReady,
+                note = timeReady ? null : "Campaign time is not initialised yet - the save is still loading.",
                 isMainPartyActive = MobileParty.MainParty != null
             };
         }

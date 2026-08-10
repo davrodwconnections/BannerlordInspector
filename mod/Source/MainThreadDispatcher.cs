@@ -59,15 +59,29 @@ namespace BannerlordInspector
                 // The timeout message is where a hang is first noticed, so say what is known about
                 // it here rather than making the user go and ask a second question.
                 long since = Heartbeat.MillisecondsSinceLastTick;
-                string diagnosis = Heartbeat.LooksHung
-                    ? $"The game has not ticked for {since} ms - it appears HUNG, not merely busy. "
-                      + $"Last thing it was doing: '{Heartbeat.LastPhase}' ({Heartbeat.LastContext}). "
-                      + "Ask /hang or /threads - those answer without waiting for the game."
-                    : Heartbeat.State == "loading" || Heartbeat.State == "starting"
-                        ? $"The game is on a loading screen ({since} ms without a tick, no campaign "
-                          + "up). That is normal on a heavy modlist - ask again once you are on the map."
-                        : "The game is still ticking, so this request was probably just queued behind "
-                          + "slower work.";
+
+                // Order matters, and the first version had it backwards. "Looks hung" was asserted
+                // before checking whether a campaign was even up, so loading a save - which stalls
+                // the main thread for tens of seconds by design - was announced as a hang. Calling
+                // a normal load a freeze is how a diagnostic loses the benefit of the doubt on the
+                // day something really does freeze.
+                //
+                // Without a campaign, a stalled main thread is loading until proven otherwise. Only
+                // a stall WITH a campaign up is worth the stronger word.
+                bool noCampaign = TaleWorlds.CampaignSystem.Campaign.Current == null;
+
+                string diagnosis =
+                    noCampaign || Heartbeat.State == "loading" || Heartbeat.State == "starting"
+                        ? $"No campaign is up and the game has not ticked for {since} ms - it is "
+                          + "almost certainly loading, which stalls the main thread by design and "
+                          + "takes a while on a heavy modlist. Ask again once you are on the map."
+                    : Heartbeat.LooksHung
+                        ? $"The game has not ticked for {since} ms with a campaign loaded - it "
+                          + "appears HUNG, not merely busy. Last thing it was doing: "
+                          + $"'{Heartbeat.LastPhase}' ({Heartbeat.LastContext}). Ask /hang or "
+                          + "/threads - those answer without waiting for the game."
+                        : "The game is still ticking, so this request was probably just queued "
+                          + "behind slower work.";
 
                 throw new TimeoutException(
                     $"The game did not run this within {timeoutMs} ms. " + diagnosis);

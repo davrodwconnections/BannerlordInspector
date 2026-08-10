@@ -284,7 +284,7 @@ namespace BannerlordInspector
         /// trade is worth making - a list nobody reads finds nothing at all. Pass all=true to see
         /// everything.
         /// </summary>
-        private static bool IsProp(string id)
+        internal static bool IsProp(string id)
         {
             return id.IndexOf("dummy", StringComparison.OrdinalIgnoreCase) >= 0
                    || id.IndexOf("practice", StringComparison.OrdinalIgnoreCase) >= 0

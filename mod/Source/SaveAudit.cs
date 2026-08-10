@@ -35,7 +35,10 @@ namespace BannerlordInspector
 
         public static object Run()
         {
-            Type definerBase = AccessTools.TypeByName("TaleWorlds.SaveSystem.Definition.SaveableTypeDefiner");
+            // Verified against the running game rather than assumed: the first guess put this under
+            // a .Definition namespace that does not exist, and the check reported "not found" on an
+            // install with six definers loaded.
+            Type definerBase = AccessTools.TypeByName("TaleWorlds.SaveSystem.SaveableTypeDefiner");
 
             if (definerBase == null)
             {
