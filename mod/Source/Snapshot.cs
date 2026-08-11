@@ -292,7 +292,13 @@ namespace BannerlordInspector
             foreach (Hero hero in Hero.AllAliveHeroes ?? Enumerable.Empty<Hero>())
             {
                 string id = Safe(() => hero.StringId);
-                if (!string.IsNullOrEmpty(id)) state.Heroes.Add(id);
+                if (string.IsNullOrEmpty(id)) continue;
+
+                // Id AND name. The id is what makes the comparison correct - names are not unique
+                // and change with titles - but a diff that reports "CharacterObject_5003 died" is
+                // one nobody can act on. The first real comparison returned forty of those.
+                string who = Safe(() => hero.Name?.ToString());
+                state.Heroes.Add(string.IsNullOrEmpty(who) ? id : id + " (" + who + ")");
             }
 
             state.Heroes.Sort(StringComparer.Ordinal);
