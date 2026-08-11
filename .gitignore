@@ -7,3 +7,7 @@ dist/
 *.log
 Thumbs.db
 desktop.ini
+
+# Herramientas y datos nuestros: vigia, linea base, borradores.
+# NO se publican - el repo es publico y esto es material de trabajo interno.
+local/
